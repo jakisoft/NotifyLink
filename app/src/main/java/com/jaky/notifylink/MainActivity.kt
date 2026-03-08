@@ -160,10 +160,10 @@ class MainActivity : Activity() {
         tvDevDetail.text = "Jaky adalah pengembang utama NotifyLink. Fokus pengembangan pada performa, keamanan payload, desain minimal modern, dan kemudahan integrasi otomatisasi notifikasi skala personal maupun bisnis."
 
         setLink(tvLinkWebsite, "https://www.jaky.dev")
-        setLink(tvLinkGithub, "https://github.com/jaky")
-        setLink(tvLinkTiktok, "https://www.tiktok.com/@jaky")
-        setLink(tvLinkInstagram, "https://www.instagram.com/jaky")
-        setLink(tvLinkWhatsapp, "https://whatsapp.com/channel/0029Vexample")
+        setLink(tvLinkGithub, "https://github.com/jakisoft")
+        setLink(tvLinkTiktok, "https://www.tiktok.com/@jakysoft")
+        setLink(tvLinkInstagram, "https://www.instagram.com/jakisoft")
+        setLink(tvLinkWhatsapp, "https://chat.whatsapp.com/KTjrPdbxbvj93IvTvaMcWh?mode=hqctcla")
     }
 
     private fun setLink(textView: TextView, url: String) {
