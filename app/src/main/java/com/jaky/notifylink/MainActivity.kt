@@ -381,20 +381,26 @@ class MainActivity : Activity() {
 
     private fun getInstalledNonSystemApps(): List<DeviceApp> {
         val apps = packageManager.getInstalledApplications(0)
+            .asSequence()
             .filter { app ->
+                val hasLauncher = packageManager.getLaunchIntentForPackage(app.packageName) != null
                 val isSystem = app.flags and ApplicationInfo.FLAG_SYSTEM != 0
                 val isUpdatedSystem = app.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
-                val hasLauncher = packageManager.getLaunchIntentForPackage(app.packageName) != null
-                !isSystem && !isUpdatedSystem && hasLauncher
+                hasLauncher && (!isSystem || isUpdatedSystem)
             }
-            .map { app ->
-                DeviceApp(
-                    label = packageManager.getApplicationLabel(app).toString(),
-                    packageName = app.packageName,
-                    icon = packageManager.getApplicationIcon(app.packageName)
-                )
+            .mapNotNull { app ->
+                try {
+                    DeviceApp(
+                        label = packageManager.getApplicationLabel(app).toString(),
+                        packageName = app.packageName,
+                        icon = packageManager.getApplicationIcon(app.packageName)
+                    )
+                } catch (e: Exception) {
+                    null
+                }
             }
             .sortedBy { it.label.lowercase() }
+            .toList()
         return apps
     }
 
