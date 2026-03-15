@@ -15,6 +15,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.util.Base64
+import android.os.Build
+import org.json.JSONObject
 import kotlin.concurrent.thread
 
 class NotificationService : NotificationListenerService() {
@@ -55,14 +57,62 @@ class NotificationService : NotificationListenerService() {
         if (sharedPref.getBoolean("webhook_on", false)) {
             val webUrl = sharedPref.getString("webhook_url", "") ?: ""
             if (webUrl.isNotEmpty()) {
-                val json = "{\"package\":\"$currentPkg\",\"title\":\"${escapeJson(title)}\",\"message\":\"${escapeJson(text)}\",\"time\":\"$time\",\"icon_data_url\":\"${escapeJson(iconDataUri)}\"}"
-                sendWebhook(webUrl, json, currentPkg, time)
+                val payload = buildWebhookPayload(currentPkg, title, text, time, iconDataUri, sbn.postTime)
+                sendWebhook(webUrl, payload.toString(), currentPkg, time)
             }
         } else {
             addLog("[$time] $currentPkg\n$title: $text")
         }
     }
 
+
+
+    private fun buildWebhookPayload(
+        packageName: String,
+        title: String,
+        message: String,
+        eventTime: String,
+        iconDataUri: String,
+        postedAtMillis: Long
+    ): JSONObject {
+        val appLabel = try {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(packageName, 0)
+            ).toString()
+        } catch (e: Exception) {
+            packageName
+        }
+
+        val device = JSONObject()
+            .put("manufacturer", Build.MANUFACTURER ?: "Unknown")
+            .put("brand", Build.BRAND ?: "Unknown")
+            .put("model", Build.MODEL ?: "Unknown")
+            .put("device", Build.DEVICE ?: "Unknown")
+            .put("product", Build.PRODUCT ?: "Unknown")
+            .put("hardware", Build.HARDWARE ?: "Unknown")
+            .put("android_version", Build.VERSION.RELEASE ?: "Unknown")
+            .put("sdk_int", Build.VERSION.SDK_INT)
+            .put("fingerprint", Build.FINGERPRINT ?: "Unknown")
+
+        val app = JSONObject()
+            .put("name", appLabel)
+            .put("package", packageName)
+
+        val notification = JSONObject()
+            .put("title", title)
+            .put("message", message)
+            .put("display_time", eventTime)
+            .put("posted_at_millis", postedAtMillis)
+            .put("icon_data_url", iconDataUri)
+
+        return JSONObject()
+            .put("source", "NotifyLink")
+            .put("event", "notification_posted")
+            .put("sent_at_millis", System.currentTimeMillis())
+            .put("app", app)
+            .put("notification", notification)
+            .put("device", device)
+    }
 
     private fun parseMultiValue(raw: String): List<String> {
         return raw.split("||", ",")
@@ -95,9 +145,6 @@ class NotificationService : NotificationListenerService() {
         }
     }
 
-    private fun escapeJson(value: String): String {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
-    }
 
     private fun addLog(logEntry: String) {
         val sharedPref = getSharedPreferences("NotifyLinkPref", Context.MODE_PRIVATE)
