@@ -32,7 +32,9 @@ function buildDeviceResponse(deviceRecord) {
   return {
     ...deviceRecord,
     computed_status: {
+      status_source: "heartbeat",
       online: !stale && internetActive,
+      internet_active_last_report: internetActive,
       stale,
       age_ms: ageMs,
       offline_window_ms: OFFLINE_WINDOW_MS

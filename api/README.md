@@ -64,3 +64,13 @@ Response berisi `computed_status`:
 Isi field **Device Status API** dengan URL endpoint POST, misalnya:
 
 `http://YOUR_SERVER:3000/api/device/status`
+
+## Cara kerja status (penting)
+
+Endpoint `GET /api/device/:deviceId/status` **tidak bisa pull langsung** ke HP user saat diminta.
+Server menampilkan status berdasarkan **heartbeat** yang dikirim aplikasi Android secara periodik (default 60 detik) + event notifikasi.
+
+Artinya:
+- Jika device offline total, server tidak menerima heartbeat baru.
+- Status dihitung memakai `last_seen_millis` + `OFFLINE_WINDOW_MS` dan ditampilkan pada `computed_status`.
+- Jadi hasil tetap near real-time, tanpa harus menunggu notifikasi baru, karena heartbeat berjalan berkala.

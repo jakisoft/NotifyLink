@@ -12,6 +12,8 @@ import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Base64
+import android.os.Handler
+import android.os.Looper
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -30,9 +32,40 @@ class NotificationService : NotificationListenerService() {
         private const val KEY_PENDING_NOTIFICATIONS = "pending_notifications"
         private const val KEY_STATUS_API_URL = "status_api_url"
         private const val MAX_PENDING_NOTIFICATIONS = 200
+        private const val HEARTBEAT_INTERVAL_MS = 60_000L
+    }
+
+    private val heartbeatHandler = Handler(Looper.getMainLooper())
+    private val heartbeatRunnable = object : Runnable {
+        override fun run() {
+            val sharedPref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            thread { reportDeviceStatus(sharedPref, "heartbeat") }
+            heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+        }
+    }
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        startHeartbeat()
+        val sharedPref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        thread {
+            flushPendingNotifications(sharedPref)
+            reportDeviceStatus(sharedPref, "listener_connected")
+        }
+    }
+
+    override fun onListenerDisconnected() {
+        stopHeartbeat()
+        super.onListenerDisconnected()
+    }
+
+    override fun onDestroy() {
+        stopHeartbeat()
+        super.onDestroy()
     }
 
     override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
+        startHeartbeat()
         val sharedPref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         thread {
             flushPendingNotifications(sharedPref)
@@ -73,6 +106,15 @@ class NotificationService : NotificationListenerService() {
 
             reportDeviceStatus(sharedPref, "notification_event")
         }
+    }
+
+    private fun startHeartbeat() {
+        heartbeatHandler.removeCallbacks(heartbeatRunnable)
+        heartbeatHandler.post(heartbeatRunnable)
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatHandler.removeCallbacks(heartbeatRunnable)
     }
 
     private fun dispatchNotification(
@@ -195,7 +237,6 @@ class NotificationService : NotificationListenerService() {
 
         val internetActive = hasInternetConnection()
         if (!internetActive) {
-            addLog("[${currentTime()}] STATUS API PENDING\nReason: Device offline")
             return
         }
 
@@ -216,6 +257,7 @@ class NotificationService : NotificationListenerService() {
             )
             .put("status", JSONObject()
                 .put("internet_active", internetActive)
+                .put("heartbeat_interval_ms", HEARTBEAT_INTERVAL_MS)
                 .put("network_type", networkType)
                 .put("pending_notification_queue", getPendingQueueCount(sharedPref))
                 .put("master_on", sharedPref.getBoolean("master_on", false))
