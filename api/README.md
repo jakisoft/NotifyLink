@@ -55,7 +55,7 @@ Response berisi `computed_status`:
 - `online`: true/false
 - `stale`: data terlalu lama atau tidak
 - `age_ms`: umur update terakhir
-- `offline_window_ms`: batas stale (default 120000 ms)
+- `offline_window_ms`: batas stale (default 30000 ms / 30 detik)
 
 ### 4) List semua device
 `GET /api/devices`
@@ -68,9 +68,10 @@ Isi field **Device Status API** dengan URL endpoint POST, misalnya:
 ## Cara kerja status (penting)
 
 Endpoint `GET /api/device/:deviceId/status` **tidak bisa pull langsung** ke HP user saat diminta.
-Server menampilkan status berdasarkan **heartbeat** yang dikirim aplikasi Android secara periodik (default 60 detik) + event notifikasi.
+Server menampilkan status berdasarkan **heartbeat** yang dikirim aplikasi Android secara periodik (default 30 detik) + event notifikasi.
 
 Artinya:
 - Jika device offline total, server tidak menerima heartbeat baru.
 - Status dihitung memakai `last_seen_millis` + `OFFLINE_WINDOW_MS` dan ditampilkan pada `computed_status`.
+- Jika tidak ada update heartbeat melewati window ini, device dianggap offline (`online: false`).
 - Jadi hasil tetap near real-time, tanpa harus menunggu notifikasi baru, karena heartbeat berjalan berkala.

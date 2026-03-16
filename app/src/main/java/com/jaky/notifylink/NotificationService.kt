@@ -32,7 +32,7 @@ class NotificationService : NotificationListenerService() {
         private const val KEY_PENDING_NOTIFICATIONS = "pending_notifications"
         private const val KEY_STATUS_API_URL = "status_api_url"
         private const val MAX_PENDING_NOTIFICATIONS = 200
-        private const val HEARTBEAT_INTERVAL_MS = 60_000L
+        private const val HEARTBEAT_INTERVAL_MS = 30_000L
     }
 
     private val heartbeatHandler = Handler(Looper.getMainLooper())
