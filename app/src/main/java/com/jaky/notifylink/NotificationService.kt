@@ -1,5 +1,6 @@
 package com.jaky.notifylink
 
+import android.app.Notification
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -8,6 +9,7 @@ import android.graphics.drawable.Drawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -33,6 +35,7 @@ class NotificationService : NotificationListenerService() {
         private const val KEY_STATUS_API_URL = "status_api_url"
         private const val MAX_PENDING_NOTIFICATIONS = 200
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
+        private const val DUPLICATE_WINDOW_MS = 5_000L
     }
 
     private val heartbeatHandler = Handler(Looper.getMainLooper())
@@ -43,6 +46,8 @@ class NotificationService : NotificationListenerService() {
             heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
         }
     }
+
+    private val recentNotificationSignatures = LinkedHashMap<String, Long>()
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -83,17 +88,20 @@ class NotificationService : NotificationListenerService() {
         val packageFilters = parseMultiValue(packageFilterRaw)
         if (packageFilters.isNotEmpty() && packageFilters.none { it.equals(currentPkg, true) }) return
 
-        val extras = sbn.notification.extras
-        val title = extras.getString("android.title") ?: "No Title"
-        val text = extras.getCharSequence("android.text")?.toString() ?: "No Content"
+        val notificationContent = extractNotificationContent(sbn)
+        val title = notificationContent.first
+        val text = notificationContent.second
         val keywordFilterRaw = sharedPref.getString("filter_keywords", sharedPref.getString("filter_keyword", "") ?: "") ?: ""
         val keywordFilters = parseMultiValue(keywordFilterRaw)
 
         if (keywordFilters.isNotEmpty() && keywordFilters.none { text.contains(it, true) || title.contains(it, true) }) return
 
+        if (isDuplicateNotification(sbn, title, text)) return
+
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
         val iconDataUri = getAppIconDataUri(currentPkg)
         val payload = buildWebhookPayload(currentPkg, title, text, time, iconDataUri, sbn.postTime)
+        addLog("[$time] $currentPkg\nTitle: $title\nMessage: $text")
 
         thread {
             flushPendingNotifications(sharedPref)
@@ -115,6 +123,72 @@ class NotificationService : NotificationListenerService() {
 
     private fun stopHeartbeat() {
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
+    }
+
+    private fun isDuplicateNotification(sbn: StatusBarNotification, title: String, message: String): Boolean {
+        val now = System.currentTimeMillis()
+        val signature = "${sbn.packageName}|${sbn.id}|${sbn.postTime}|$title|$message"
+        val lastTime = recentNotificationSignatures[signature]
+        recentNotificationSignatures[signature] = now
+
+        val iterator = recentNotificationSignatures.entries.iterator()
+        while (iterator.hasNext()) {
+            val item = iterator.next()
+            if (now - item.value > DUPLICATE_WINDOW_MS) {
+                iterator.remove()
+            }
+        }
+
+        return lastTime != null && now - lastTime <= DUPLICATE_WINDOW_MS
+    }
+
+    private fun extractNotificationContent(sbn: StatusBarNotification): Pair<String, String> {
+        val extras = sbn.notification.extras ?: Bundle.EMPTY
+        val titleCandidates = listOf(
+            extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString(),
+            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+            extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString(),
+            extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+        )
+
+        val messageFromMessagingStyle = extractMessagingStyleText(extras)
+        val messageCandidates = listOf(
+            extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+            messageFromMessagingStyle,
+            sbn.notification.tickerText?.toString()
+        )
+
+        val fallbackTitle = getAppLabelSafe(sbn.packageName)
+        val title = titleCandidates.firstNotNullOfOrNull { sanitizeNotificationText(it) } ?: fallbackTitle
+        val message = messageCandidates.firstNotNullOfOrNull { sanitizeNotificationText(it) } ?: "No message content"
+
+        return title to message
+    }
+
+    private fun extractMessagingStyleText(extras: Bundle): String? {
+        val rawMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return null
+        val parts = rawMessages.mapNotNull { item ->
+            val bundle = item as? Bundle ?: return@mapNotNull null
+            val msg = Notification.MessagingStyle.Message.getMessageFromBundle(bundle)
+            sanitizeNotificationText(msg?.text?.toString())
+        }
+        return if (parts.isEmpty()) null else parts.joinToString(" | ")
+    }
+
+    private fun sanitizeNotificationText(value: String?): String? {
+        val cleaned = value?.replace("\n", " ")?.trim().orEmpty()
+        if (cleaned.isEmpty()) return null
+        if (cleaned.equals("null", true)) return null
+        return cleaned
+    }
+
+    private fun getAppLabelSafe(packageName: String): String {
+        return try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+        } catch (e: Exception) {
+            packageName
+        }
     }
 
     private fun dispatchNotification(

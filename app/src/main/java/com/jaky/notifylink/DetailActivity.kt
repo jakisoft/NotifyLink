@@ -101,7 +101,12 @@ class DetailActivity : Activity() {
 
         var title = "Notification"
         var message = lines.drop(1).joinToString(" ").trim()
-        if (lines.size > 1 && lines[1].contains(":")) {
+        val titleLine = lines.firstOrNull { it.startsWith("Title:") }
+        val messageLine = lines.firstOrNull { it.startsWith("Message:") }
+        if (titleLine != null || messageLine != null) {
+            title = titleLine?.removePrefix("Title:")?.trim().orEmpty().ifEmpty { "Notification" }
+            message = messageLine?.removePrefix("Message:")?.trim().orEmpty()
+        } else if (lines.size > 1 && lines[1].contains(":")) {
             title = lines[1].substringBefore(":").trim().ifEmpty { "Notification" }
             message = lines[1].substringAfter(":").trim()
         }
