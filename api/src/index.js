@@ -7,7 +7,7 @@ app.use(express.json({ limit: '1mb' }));
 
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, '..', 'data', 'device-status.json');
-const OFFLINE_WINDOW_MS = Number(process.env.OFFLINE_WINDOW_MS || 120000);
+const OFFLINE_WINDOW_MS = Number(process.env.OFFLINE_WINDOW_MS || 30000);
 
 function readDb() {
   try {
