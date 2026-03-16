@@ -8,6 +8,7 @@ import android.graphics.drawable.Drawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Base64
@@ -27,12 +28,16 @@ class NotificationService : NotificationListenerService() {
     companion object {
         private const val PREF_NAME = "NotifyLinkPref"
         private const val KEY_PENDING_NOTIFICATIONS = "pending_notifications"
+        private const val KEY_STATUS_API_URL = "status_api_url"
         private const val MAX_PENDING_NOTIFICATIONS = 200
     }
 
     override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
         val sharedPref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        thread { flushPendingNotifications(sharedPref) }
+        thread {
+            flushPendingNotifications(sharedPref)
+            reportDeviceStatus(sharedPref, "listener_start")
+        }
         return START_STICKY
     }
 
@@ -65,6 +70,8 @@ class NotificationService : NotificationListenerService() {
                 enqueuePendingNotification(sharedPref, payload)
                 addLog("[$time] QUEUED\nPkg: $currentPkg\nReason: Offline / delivery failed, akan dicoba ulang")
             }
+
+            reportDeviceStatus(sharedPref, "notification_event")
         }
     }
 
@@ -154,32 +161,101 @@ class NotificationService : NotificationListenerService() {
     }
 
     private fun enqueuePendingNotification(sharedPref: android.content.SharedPreferences, payload: JSONObject) {
-        val current = try {
+        val queue = try {
             JSONArray(sharedPref.getString(KEY_PENDING_NOTIFICATIONS, "") ?: "")
         } catch (e: Exception) {
             JSONArray()
         }
 
-        current.put(payload)
-        while (current.length() > MAX_PENDING_NOTIFICATIONS) {
-            removeFirstItem(current)
+        queue.put(payload)
+        while (queue.length() > MAX_PENDING_NOTIFICATIONS) {
+            trimOldestItem(queue)
         }
 
-        sharedPref.edit().putString(KEY_PENDING_NOTIFICATIONS, current.toString()).apply()
+        sharedPref.edit().putString(KEY_PENDING_NOTIFICATIONS, queue.toString()).apply()
     }
 
-    private fun removeFirstItem(array: JSONArray): JSONArray {
-        val trimmed = JSONArray()
+    private fun trimOldestItem(array: JSONArray) {
+        if (array.length() <= 0) return
+        val copy = JSONArray()
         for (i in 1 until array.length()) {
-            trimmed.put(array.opt(i))
+            copy.put(array.opt(i))
         }
-        return trimmed.also { replacement ->
-            for (i in array.length() - 1 downTo 0) {
-                array.remove(i)
+        while (array.length() > 0) {
+            array.remove(0)
+        }
+        for (i in 0 until copy.length()) {
+            array.put(copy.opt(i))
+        }
+    }
+
+    private fun reportDeviceStatus(sharedPref: android.content.SharedPreferences, reason: String) {
+        val statusApiUrl = sharedPref.getString(KEY_STATUS_API_URL, "")?.trim().orEmpty()
+        if (statusApiUrl.isEmpty()) return
+
+        val internetActive = hasInternetConnection()
+        if (!internetActive) {
+            addLog("[${currentTime()}] STATUS API PENDING\nReason: Device offline")
+            return
+        }
+
+        val networkType = getNetworkType()
+        val payload = JSONObject()
+            .put("source", "NotifyLink")
+            .put("event", "device_status")
+            .put("sent_at_millis", System.currentTimeMillis())
+            .put("reason", reason)
+            .put("device", JSONObject()
+                .put("device_id", getDeviceId())
+                .put("manufacturer", Build.MANUFACTURER ?: "Unknown")
+                .put("brand", Build.BRAND ?: "Unknown")
+                .put("model", Build.MODEL ?: "Unknown")
+                .put("device", Build.DEVICE ?: "Unknown")
+                .put("android_version", Build.VERSION.RELEASE ?: "Unknown")
+                .put("sdk_int", Build.VERSION.SDK_INT)
+            )
+            .put("status", JSONObject()
+                .put("internet_active", internetActive)
+                .put("network_type", networkType)
+                .put("pending_notification_queue", getPendingQueueCount(sharedPref))
+                .put("master_on", sharedPref.getBoolean("master_on", false))
+                .put("telegram_on", sharedPref.getBoolean("telegram_on", false))
+                .put("webhook_on", sharedPref.getBoolean("webhook_on", false))
+            )
+
+        val sent = sendDeviceStatus(statusApiUrl, payload.toString())
+        if (!sent) {
+            addLog("[${currentTime()}] STATUS API FAILED\nEndpoint: $statusApiUrl")
+        }
+    }
+
+    private fun getPendingQueueCount(sharedPref: android.content.SharedPreferences): Int {
+        val raw = sharedPref.getString(KEY_PENDING_NOTIFICATIONS, "") ?: ""
+        return try {
+            JSONArray(raw).length()
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    private fun getDeviceId(): String {
+        val fromSystem = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+        return if (fromSystem.isNullOrBlank()) "unknown-device" else fromSystem
+    }
+
+    private fun getNetworkType(): String {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = cm.activeNetwork ?: return "none"
+            val capabilities = cm.getNetworkCapabilities(network) ?: return "none"
+            when {
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                else -> "other"
             }
-            for (i in 0 until replacement.length()) {
-                array.put(replacement.opt(i))
-            }
+        } catch (e: Exception) {
+            "unknown"
         }
     }
 
@@ -278,6 +354,10 @@ class NotificationService : NotificationListenerService() {
         sharedPref.edit().putString("last_logs", "$logEntry|||$oldLogs").apply()
     }
 
+    private fun currentTime(): String {
+        return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+    }
+
     private fun sendTelegram(token: String, chat: String, msg: String): Boolean {
         return try {
             val url = URL("https://api.telegram.org/bot$token/sendMessage?chat_id=$chat&text=${URLEncoder.encode(msg, "UTF-8")}&parse_mode=Markdown")
@@ -318,6 +398,23 @@ class NotificationService : NotificationListenerService() {
             responseCode in 200..299
         } catch (e: Exception) {
             addLog("[$time] WEBHOOK FAILED\nPkg: $pkg\nError: ${e.message}")
+            false
+        }
+    }
+
+    private fun sendDeviceStatus(urlStr: String, json: String): Boolean {
+        return try {
+            val url = URL(urlStr)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.outputStream.write(json.toByteArray())
+            val responseCode = conn.responseCode
+            conn.inputStream?.close()
+            conn.disconnect()
+            responseCode in 200..299
+        } catch (e: Exception) {
             false
         }
     }

@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var etChatId: EditText
     private lateinit var etFilterInput: EditText
     private lateinit var etWebhookUrl: EditText
+    private lateinit var etStatusApiUrl: EditText
     private lateinit var switchMaster: Switch
     private lateinit var switchTelegram: Switch
     private lateinit var switchWebhook: Switch
@@ -97,6 +98,7 @@ class MainActivity : Activity() {
         etChatId = findViewById(R.id.etChatId)
         etFilterInput = findViewById(R.id.etFilterInput)
         etWebhookUrl = findViewById(R.id.etWebhookUrl)
+        etStatusApiUrl = findViewById(R.id.etStatusApiUrl)
         switchMaster = findViewById(R.id.switchMaster)
         switchTelegram = findViewById(R.id.switchTelegram)
         switchWebhook = findViewById(R.id.switchWebhook)
@@ -178,6 +180,7 @@ class MainActivity : Activity() {
         etBotToken.setText(pref.getString("bot_token", ""))
         etChatId.setText(pref.getString("chat_id", ""))
         etWebhookUrl.setText(pref.getString("webhook_url", ""))
+        etStatusApiUrl.setText(pref.getString("status_api_url", ""))
 
         val packageValue = pref.getString("package_names", pref.getString("package_name", "") ?: "") ?: ""
         val filterValue = pref.getString("filter_keywords", pref.getString("filter_keyword", "") ?: "") ?: ""
@@ -211,6 +214,7 @@ class MainActivity : Activity() {
         editor.putString("package_name", selectedPackages.joinToString(","))
         editor.putString("filter_keyword", selectedFilters.joinToString(","))
         editor.putString("webhook_url", etWebhookUrl.text.toString())
+        editor.putString("status_api_url", etStatusApiUrl.text.toString())
         editor.putBoolean("master_on", switchMaster.isChecked)
         editor.putBoolean("telegram_on", switchTelegram.isChecked)
         editor.putBoolean("webhook_on", switchWebhook.isChecked)

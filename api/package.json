@@ -1,0 +1,12 @@
+{
+  "name": "notifylink-device-status-api",
+  "version": "1.0.0",
+  "description": "Device status API for NotifyLink",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
