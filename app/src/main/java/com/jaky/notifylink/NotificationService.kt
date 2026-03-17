@@ -36,6 +36,7 @@ class NotificationService : NotificationListenerService() {
         private const val MAX_PENDING_NOTIFICATIONS = 200
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
         private const val DUPLICATE_WINDOW_MS = 5_000L
+        const val ACTION_SYNC_DEVICE_STATUS = "com.jaky.notifylink.action.SYNC_DEVICE_STATUS"
     }
 
     private val heartbeatHandler = Handler(Looper.getMainLooper())
@@ -72,9 +73,10 @@ class NotificationService : NotificationListenerService() {
     override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
         startHeartbeat()
         val sharedPref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val reason = if (intent?.action == ACTION_SYNC_DEVICE_STATUS) "manual_sync" else "listener_start"
         thread {
             flushPendingNotifications(sharedPref)
-            reportDeviceStatus(sharedPref, "listener_start")
+            reportDeviceStatus(sharedPref, reason)
         }
         return START_STICKY
     }

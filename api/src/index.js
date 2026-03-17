@@ -56,14 +56,15 @@ function buildDeviceResponse(deviceRecord) {
   const ageMs = now - referenceMillis;
   const effectiveOfflineWindowMs = resolveEffectiveOfflineWindowMs(deviceRecord);
   const stale = ageMs > effectiveOfflineWindowMs;
-  const internetActive = !!deviceRecord.last_status?.internet_active;
+  const hasInternetFlag = typeof deviceRecord.last_status?.internet_active === 'boolean';
+  const internetActive = hasInternetFlag ? deviceRecord.last_status.internet_active : true;
 
   return {
     ...deviceRecord,
     computed_status: {
       status_source: "heartbeat",
       online: !stale && internetActive,
-      internet_active_last_report: internetActive,
+      internet_active_last_report: hasInternetFlag ? internetActive : null,
       stale,
       age_ms: ageMs,
       offline_window_ms: effectiveOfflineWindowMs,
