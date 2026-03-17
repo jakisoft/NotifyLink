@@ -170,8 +170,8 @@ class NotificationService : NotificationListenerService() {
         val rawMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return null
         val parts = rawMessages.mapNotNull { item ->
             val bundle = item as? Bundle ?: return@mapNotNull null
-            val msg = Notification.MessagingStyle.Message.getMessageFromBundle(bundle)
-            sanitizeNotificationText(msg?.text?.toString())
+            val text = bundle.getCharSequence("text")?.toString()
+            sanitizeNotificationText(text)
         }
         return if (parts.isEmpty()) null else parts.joinToString(" | ")
     }
