@@ -8,6 +8,33 @@ app.use(express.json({ limit: '1mb' }));
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, '..', 'data', 'device-status.json');
 const OFFLINE_WINDOW_MS = Number(process.env.OFFLINE_WINDOW_MS || 30000);
+const HEARTBEAT_GRACE_MS = Number(process.env.HEARTBEAT_GRACE_MS || 15000);
+const MAX_CLIENT_CLOCK_SKEW_MS = Number(process.env.MAX_CLIENT_CLOCK_SKEW_MS || 10 * 60 * 1000);
+
+function resolveEffectiveOfflineWindowMs(deviceRecord) {
+  const reportedHeartbeatInterval = Number(deviceRecord.last_status?.heartbeat_interval_ms || 0);
+  if (!Number.isFinite(reportedHeartbeatInterval) || reportedHeartbeatInterval <= 0) {
+    return OFFLINE_WINDOW_MS;
+  }
+
+  // Heartbeat yang datang tepat 30 detik sering dianggap telat karena jitter jaringan.
+  // Pakai minimal 2x interval + grace agar status tidak mudah "flapping".
+  return Math.max(OFFLINE_WINDOW_MS, (reportedHeartbeatInterval * 2) + HEARTBEAT_GRACE_MS);
+}
+
+function resolveLastSeenMillis(sentAtMillis, receivedAtMillis) {
+  const sentAt = Number(sentAtMillis);
+  if (!Number.isFinite(sentAt) || sentAt <= 0) {
+    return receivedAtMillis;
+  }
+
+  const clockSkew = Math.abs(receivedAtMillis - sentAt);
+  if (clockSkew > MAX_CLIENT_CLOCK_SKEW_MS) {
+    return receivedAtMillis;
+  }
+
+  return sentAt;
+}
 
 function readDb() {
   try {
@@ -25,8 +52,10 @@ function writeDb(db) {
 
 function buildDeviceResponse(deviceRecord) {
   const now = Date.now();
-  const ageMs = now - (deviceRecord.last_seen_millis || 0);
-  const stale = ageMs > OFFLINE_WINDOW_MS;
+  const referenceMillis = deviceRecord.last_seen_server_millis || deviceRecord.last_seen_millis || 0;
+  const ageMs = now - referenceMillis;
+  const effectiveOfflineWindowMs = resolveEffectiveOfflineWindowMs(deviceRecord);
+  const stale = ageMs > effectiveOfflineWindowMs;
   const internetActive = !!deviceRecord.last_status?.internet_active;
 
   return {
@@ -37,7 +66,8 @@ function buildDeviceResponse(deviceRecord) {
       internet_active_last_report: internetActive,
       stale,
       age_ms: ageMs,
-      offline_window_ms: OFFLINE_WINDOW_MS
+      offline_window_ms: effectiveOfflineWindowMs,
+      configured_offline_window_ms: OFFLINE_WINDOW_MS
     }
   };
 }
@@ -55,7 +85,8 @@ app.post('/api/device/status', (req, res) => {
   }
 
   const db = readDb();
-  const lastSeen = body.sent_at_millis || Date.now();
+  const receivedAt = Date.now();
+  const lastSeen = resolveLastSeenMillis(body.sent_at_millis, receivedAt);
 
   db.devices[deviceId] = {
     device_id: deviceId,
@@ -64,7 +95,9 @@ app.post('/api/device/status', (req, res) => {
     device: body.device || {},
     last_status: body.status || {},
     last_seen_millis: lastSeen,
+    last_seen_server_millis: receivedAt,
     last_seen_iso: new Date(lastSeen).toISOString(),
+    last_seen_server_iso: new Date(receivedAt).toISOString(),
     updated_at_iso: new Date().toISOString()
   };
 
