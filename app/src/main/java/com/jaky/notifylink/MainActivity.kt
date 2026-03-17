@@ -217,8 +217,8 @@ class MainActivity : Activity() {
         editor.putString("filter_keywords", selectedFilters.joinToString("||"))
         editor.putString("package_name", selectedPackages.joinToString(","))
         editor.putString("filter_keyword", selectedFilters.joinToString(","))
-        editor.putString("webhook_url", etWebhookUrl.text.toString())
-        editor.putString("status_api_url", etStatusApiUrl.text.toString())
+        editor.putString("webhook_url", etWebhookUrl.text.toString().trim())
+        editor.putString("status_api_url", etStatusApiUrl.text.toString().trim())
         editor.putBoolean("master_on", switchMaster.isChecked)
         editor.putBoolean("telegram_on", switchTelegram.isChecked)
         editor.putBoolean("webhook_on", switchWebhook.isChecked)
@@ -230,6 +230,11 @@ class MainActivity : Activity() {
         if (!isNotificationServiceEnabled()) {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
+
+        val syncIntent = Intent(this, NotificationService::class.java).apply {
+            action = NotificationService.ACTION_SYNC_DEVICE_STATUS
+        }
+        startService(syncIntent)
     }
 
     private fun addFilterTagFromInput() {
