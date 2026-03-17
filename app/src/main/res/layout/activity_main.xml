@@ -661,7 +661,7 @@
             android:layout_height="24dp"
             android:background="@drawable/bg_toast_dot"
             android:gravity="center"
-            android:text="✓"
+            android:text="OK"
             android:textColor="#191919"
             android:textSize="12sp"
             android:textStyle="bold" />
