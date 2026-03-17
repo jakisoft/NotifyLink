@@ -96,6 +96,7 @@ class NotificationService : NotificationListenerService() {
 
         if (keywordFilters.isNotEmpty() && keywordFilters.none { text.contains(it, true) || title.contains(it, true) }) return
 
+        if (isLikelyInvalidMirrorPayload(currentPkg, title, text)) return
         if (isDuplicateNotification(sbn, title, text)) return
 
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
@@ -125,9 +126,21 @@ class NotificationService : NotificationListenerService() {
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
     }
 
+    private fun isLikelyInvalidMirrorPayload(packageName: String, title: String, message: String): Boolean {
+        val normalizedTitle = title.trim()
+        val normalizedMessage = message.trim()
+        if (normalizedTitle.equals("Pkg", true) && normalizedMessage.equals(packageName, true)) {
+            return true
+        }
+        if (normalizedTitle.equals(packageName, true) && normalizedMessage.equals(packageName, true)) {
+            return true
+        }
+        return false
+    }
+
     private fun isDuplicateNotification(sbn: StatusBarNotification, title: String, message: String): Boolean {
         val now = System.currentTimeMillis()
-        val signature = "${sbn.packageName}|${sbn.id}|${sbn.postTime}|$title|$message"
+        val signature = "${sbn.packageName}|${sbn.id}|${sbn.postTime}"
         val lastTime = recentNotificationSignatures[signature]
         recentNotificationSignatures[signature] = now
 
@@ -201,9 +214,6 @@ class NotificationService : NotificationListenerService() {
         val isWebhookEnabled = sharedPref.getBoolean("webhook_on", false)
 
         if (!isTelegramEnabled && !isWebhookEnabled) {
-            val title = payload.optJSONObject("notification")?.optString("title", "Notification") ?: "Notification"
-            val message = payload.optJSONObject("notification")?.optString("message", "No Content") ?: "No Content"
-            addLog("[$time] $pkg\n$title: $message")
             return true
         }
 

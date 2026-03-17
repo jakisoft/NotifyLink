@@ -59,6 +59,8 @@ class MainActivity : Activity() {
     private lateinit var layoutSuccess: LinearLayout
     private lateinit var tvSonnerMsg: TextView
     private lateinit var tvSonnerLabel: TextView
+    private lateinit var layoutPackageLoading: LinearLayout
+    private lateinit var tvPackageLoading: TextView
     private lateinit var mainConfigScroll: ScrollView
     private lateinit var layoutLogsPage: RelativeLayout
     private lateinit var layoutAboutPage: ScrollView
@@ -120,6 +122,8 @@ class MainActivity : Activity() {
         layoutSuccess = findViewById(R.id.layoutSuccess)
         tvSonnerMsg = findViewById(R.id.tvSonnerMsg)
         tvSonnerLabel = findViewById(R.id.tvSonnerLabel)
+        layoutPackageLoading = findViewById(R.id.layoutPackageLoading)
+        tvPackageLoading = findViewById(R.id.tvPackageLoading)
         mainConfigScroll = findViewById(R.id.main_scroll_config)
         layoutLogsPage = findViewById(R.id.layout_logs_page)
         layoutAboutPage = findViewById(R.id.layout_about_page)
@@ -312,75 +316,93 @@ class MainActivity : Activity() {
     }
 
     private fun openPackagePickerDialog() {
-        val allApps = getInstalledNonSystemApps()
-        allApps.forEach { appLabelByPackage[it.packageName] = it.label }
-        val selected = selectedPackages.toMutableSet()
-        val filtered = allApps.toMutableList()
-
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.setPadding(24, 20, 24, 10)
-
-        val searchInput = EditText(this)
-        searchInput.hint = "Cari nama aplikasi atau package"
-        searchInput.setBackgroundResource(R.drawable.bg_input_modern)
-        searchInput.setTextColor(0xFFFFFFFF.toInt())
-        searchInput.setHintTextColor(0xFF7D7D7D.toInt())
-        searchInput.setPadding(22, 16, 22, 16)
-        root.addView(searchInput)
-
-        val listView = ListView(this)
-        val listParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            900
-        )
-        listParams.topMargin = 14
-        listView.layoutParams = listParams
-        listView.divider = null
-
-        val adapter = PackageListAdapter(filtered, selected)
-        listView.adapter = adapter
-        listView.setOnItemClickListener { _, _, position, _ ->
-            val app = filtered[position]
-            if (selected.contains(app.packageName)) {
-                selected.remove(app.packageName)
-            } else {
-                selected.add(app.packageName)
-            }
-            adapter.notifyDataSetChanged()
-        }
-
-        root.addView(listView)
-
-        searchInput.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                val query = s.toString().trim().lowercase()
-                filtered.clear()
-                if (query.isEmpty()) {
-                    filtered.addAll(allApps)
-                } else {
-                    filtered.addAll(
-                        allApps.filter {
-                            it.label.lowercase().contains(query) || it.packageName.lowercase().contains(query)
-                        }
-                    )
+        showPackageLoading(true, "Menyiapkan daftar package...")
+        Thread {
+            val allApps = getInstalledNonSystemApps()
+            runOnUiThread {
+                showPackageLoading(false)
+                if (allApps.isEmpty()) {
+                    showSonnerAlert("Daftar package kosong / belum bisa dibaca")
+                    return@runOnUiThread
                 }
-                adapter.notifyDataSetChanged()
-            }
-            override fun afterTextChanged(s: Editable?) {}
-        })
 
-        AlertDialog.Builder(this)
-            .setTitle("Pilih Target Package")
-            .setView(root)
-            .setNegativeButton("Batal", null)
-            .setPositiveButton("Simpan") { _, _ ->
-                selectedPackages.clear()
-                selectedPackages.addAll(selected.sorted())
-                renderPackageChips()
+                allApps.forEach { appLabelByPackage[it.packageName] = it.label }
+                val selected = selectedPackages.toMutableSet()
+                val filtered = allApps.toMutableList()
+
+                val root = LinearLayout(this)
+                root.orientation = LinearLayout.VERTICAL
+                root.setPadding(24, 20, 24, 10)
+
+                val searchInput = EditText(this)
+                searchInput.hint = "Cari nama aplikasi atau package"
+                searchInput.setBackgroundResource(R.drawable.bg_input_modern)
+                searchInput.setTextColor(0xFFFFFFFF.toInt())
+                searchInput.setHintTextColor(0xFF7D7D7D.toInt())
+                searchInput.setPadding(22, 16, 22, 16)
+                root.addView(searchInput)
+
+                val listView = ListView(this)
+                val listParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    900
+                )
+                listParams.topMargin = 14
+                listView.layoutParams = listParams
+                listView.divider = null
+
+                val adapter = PackageListAdapter(filtered, selected)
+                listView.adapter = adapter
+                listView.setOnItemClickListener { _, _, position, _ ->
+                    val app = filtered[position]
+                    if (selected.contains(app.packageName)) {
+                        selected.remove(app.packageName)
+                    } else {
+                        selected.add(app.packageName)
+                    }
+                    adapter.notifyDataSetChanged()
+                }
+
+                root.addView(listView)
+
+                searchInput.addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                        val query = s.toString().trim().lowercase()
+                        filtered.clear()
+                        if (query.isEmpty()) {
+                            filtered.addAll(allApps)
+                        } else {
+                            filtered.addAll(
+                                allApps.filter {
+                                    it.label.lowercase().contains(query) || it.packageName.lowercase().contains(query)
+                                }
+                            )
+                        }
+                        adapter.notifyDataSetChanged()
+                    }
+                    override fun afterTextChanged(s: Editable?) {}
+                })
+
+                AlertDialog.Builder(this)
+                    .setTitle("Pilih Target Package")
+                    .setView(root)
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Simpan") { _, _ ->
+                        selectedPackages.clear()
+                        selectedPackages.addAll(selected.sorted())
+                        renderPackageChips()
+                    }
+                    .show()
             }
-            .show()
+        }.start()
+    }
+
+    private fun showPackageLoading(show: Boolean, message: String = "") {
+        layoutPackageLoading.visibility = if (show) View.VISIBLE else View.GONE
+        if (message.isNotEmpty()) {
+            tvPackageLoading.text = message
+        }
     }
 
     private fun getInstalledNonSystemApps(): List<DeviceApp> {
