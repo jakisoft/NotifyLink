@@ -1,7 +1,11 @@
 package com.jaky.notifylink
 
 import android.app.Notification
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
@@ -35,8 +39,24 @@ class NotificationService : NotificationListenerService() {
         private const val KEY_STATUS_API_URL = "status_api_url"
         private const val MAX_PENDING_NOTIFICATIONS = 200
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
+        private const val KEEP_ALIVE_INTERVAL_MS = 15 * 60 * 1000L
         private const val DUPLICATE_WINDOW_MS = 5_000L
+        private const val ACTION_KEEP_ALIVE = "com.jaky.notifylink.action.KEEP_ALIVE"
         const val ACTION_SYNC_DEVICE_STATUS = "com.jaky.notifylink.action.SYNC_DEVICE_STATUS"
+
+        fun ensureListenerRunning(context: Context, reason: String) {
+            val componentName = ComponentName(context, NotificationService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                NotificationListenerService.requestRebind(componentName)
+            }
+
+            kotlin.runCatching {
+                val intent = Intent(context, NotificationService::class.java).apply {
+                    action = reason
+                }
+                context.startService(intent)
+            }
+        }
     }
 
     private val heartbeatHandler = Handler(Looper.getMainLooper())
@@ -53,6 +73,7 @@ class NotificationService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         startHeartbeat()
+        scheduleKeepAliveAlarm()
         val sharedPref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         thread {
             flushPendingNotifications(sharedPref)
@@ -67,13 +88,19 @@ class NotificationService : NotificationListenerService() {
 
     override fun onDestroy() {
         stopHeartbeat()
+        scheduleKeepAliveAlarm()
         super.onDestroy()
     }
 
-    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startHeartbeat()
+        scheduleKeepAliveAlarm()
         val sharedPref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        val reason = if (intent?.action == ACTION_SYNC_DEVICE_STATUS) "manual_sync" else "listener_start"
+        val reason = when (intent?.action) {
+            ACTION_SYNC_DEVICE_STATUS -> "manual_sync"
+            ACTION_KEEP_ALIVE -> "keep_alive_alarm"
+            else -> "listener_start"
+        }
         thread {
             flushPendingNotifications(sharedPref)
             reportDeviceStatus(sharedPref, reason)
@@ -126,6 +153,21 @@ class NotificationService : NotificationListenerService() {
 
     private fun stopHeartbeat() {
         heartbeatHandler.removeCallbacks(heartbeatRunnable)
+    }
+
+    private fun scheduleKeepAliveAlarm() {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val intent = Intent(this, ListenerKeepAliveReceiver::class.java).apply {
+            action = ACTION_KEEP_ALIVE
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            this,
+            991,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val triggerAt = System.currentTimeMillis() + KEEP_ALIVE_INTERVAL_MS
+        alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
     }
 
     private fun isLikelyInvalidMirrorPayload(packageName: String, title: String, message: String): Boolean {
