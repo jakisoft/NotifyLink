@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -230,11 +231,25 @@ class MainActivity : Activity() {
         if (!isNotificationServiceEnabled()) {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
+        requestDisableBatteryOptimizationIfNeeded()
 
         val syncIntent = Intent(this, NotificationService::class.java).apply {
             action = NotificationService.ACTION_SYNC_DEVICE_STATUS
         }
         startService(syncIntent)
+    }
+
+    private fun requestDisableBatteryOptimizationIfNeeded() {
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            return
+        }
+        kotlin.runCatching {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        }
     }
 
     private fun addFilterTagFromInput() {
